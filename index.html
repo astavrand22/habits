@@ -89,6 +89,12 @@ input[type=time]::-webkit-calendar-picker-indicator{filter:invert(1);}
 /* FAB */
 #fab{position:fixed;bottom:28px;right:calc(50% - 196px);width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;font-size:28px;box-shadow:0 4px 20px rgba(99,102,241,0.5);display:flex;align-items:center;justify-content:center;z-index:40;line-height:1;}
 
+/* Date picker bar */
+#date-bar{display:flex;align-items:center;gap:8px;padding:10px 16px;background:#16161f;border-bottom:1px solid #2a2a3a;flex-shrink:0;}
+#date-bar label{font-size:12px;color:#9ca3af;white-space:nowrap;}
+#date-picker{background:#252535;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#f0f0f5;font-size:13px;outline:none;flex:1;}
+#today-btn{background:#312e81;border:none;border-radius:8px;padding:6px 12px;color:#a5b4fc;font-size:12px;font-weight:600;white-space:nowrap;}
+
 /* Sheet */
 #sheet-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:flex;align-items:flex-end;justify-content:center;}
 #sheet{width:100%;max-width:420px;background:#1c1c28;border-radius:20px 20px 0 0;padding:20px 20px 40px;max-height:90vh;overflow-y:auto;}
@@ -136,6 +142,11 @@ input[type=time]::-webkit-calendar-picker-indicator{filter:invert(1);}
     <button class="tab" data-view="week">Week</button>
     <button class="tab" data-view="stats">Stats</button>
   </div>
+  <div id="date-bar">
+    <label>📅 Logging for:</label>
+    <input type="date" id="date-picker"/>
+    <button id="today-btn">Today</button>
+  </div>
   <div id="content"></div>
   <button id="fab">+</button>
 </div>
@@ -147,6 +158,14 @@ var DAY_LABELS = ["Su","Mo","Tu","We","Th","Fr","Sa"];
 var currentView = "today";
 var statDays = 30;
 var editingHabit = null;
+var activeDate = todayKey();
+
+function updateDateBar() {
+  var dp = document.getElementById("date-picker");
+  if (dp) dp.value = activeDate;
+  var tb = document.getElementById("today-btn");
+  if (tb) tb.style.display = activeDate === todayKey() ? "none" : "block";
+}
 
 function loadHabits() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { return []; }
@@ -228,16 +247,21 @@ function render() {
   // header date
   document.getElementById("header-date").textContent = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 
-  // progress
+// progress bar uses activeDate
   var today = todayKey();
   if (currentView==="today" && habits.length>0) {
-    var done = habits.filter(function(h){return isDone(h,today);}).length;
+    var done = habits.filter(function(h){return isDone(h,activeDate);}).length;
     document.getElementById("progress-wrap").style.display="flex";
     document.getElementById("progress-bar-fill").style.width=Math.round(done/habits.length*100)+"%";
     document.getElementById("progress-label").textContent=done+"/"+habits.length;
   } else {
     document.getElementById("progress-wrap").style.display="none";
   }
+
+  // show/hide date bar only on today view
+  var dateBar = document.getElementById("date-bar");
+  if (dateBar) dateBar.style.display = (currentView==="today") ? "flex" : "none";
+  updateDateBar();
 
   // tabs
   document.querySelectorAll(".tab").forEach(function(t){
@@ -254,11 +278,15 @@ function render() {
 }
 
 function renderToday() {
-  var today = todayKey();
+  var today = activeDate;
+  var isHistorical = activeDate !== todayKey();
   var notifPerm = typeof Notification!=="undefined" ? Notification.permission : "denied";
   var html = "";
-  if (notifPerm==="default") {
+  if (notifPerm==="default" && !isHistorical) {
     html += '<div class="notif-banner"><span>🔔</span><p>Enable notifications for reminders</p><button id="enable-notif-btn">Enable</button></div>';
+  }
+  if (isHistorical) {
+    html += '<div style="background:#1e1b4b;border:1px solid #3730a3;border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#a5b4fc;">📅 Logging for <b>'+activeDate+'</b></div>';
   }
   if (habits.length===0) {
     html += '<div class="empty"><div class="emoji">🌿</div>No habits yet.<br>Tap + to add your first one!</div>';
@@ -426,11 +454,11 @@ function bindContent() {
   document.querySelectorAll("[data-toggle]").forEach(function(btn){
     btn.addEventListener("click", function(){
       var id = parseInt(this.dataset.toggle);
-      var today = todayKey();
+      var date = activeDate;
       habits = habits.map(function(h){
         if(h.id!==id) return h;
         var c = JSON.parse(JSON.stringify(h.completions));
-        c[today] = !c[today];
+        c[date] = !c[date];
         return Object.assign({},h,{completions:c});
       });
       saveHabits(habits);
@@ -443,11 +471,11 @@ function bindContent() {
     inp.addEventListener("blur", function(){
       var id = parseInt(this.dataset.valueId);
       var val = this.value;
-      var today = todayKey();
+      var date = activeDate;
       habits = habits.map(function(h){
         if(h.id!==id) return h;
         var c = JSON.parse(JSON.stringify(h.completions));
-        c[today] = val;
+        c[date] = val;
         return Object.assign({},h,{completions:c});
       });
       saveHabits(habits);
@@ -627,6 +655,18 @@ document.querySelectorAll(".tab").forEach(function(tab){
     currentView = this.dataset.view;
     render();
   });
+});
+
+// Date picker
+var dp = document.getElementById("date-picker");
+dp.max = todayKey();
+dp.value = activeDate;
+dp.addEventListener("change", function(){
+  if (this.value) { activeDate = this.value; render(); }
+});
+document.getElementById("today-btn").addEventListener("click", function(){
+  activeDate = todayKey();
+  render();
 });
 
 document.getElementById("fab").addEventListener("click",function(){ openSheet(null); });
